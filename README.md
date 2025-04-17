@@ -1,0 +1,1 @@
+This project is a collaboration between CPW and USDA over 2024 and 2025. The metabarcoding data used in this study was gereated from an Illumina NextSeq system and processed in a bioinformatics pipeline. 
