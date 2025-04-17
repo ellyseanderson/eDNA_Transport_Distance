@@ -1,0 +1,862 @@
+---
+title: "Transport_Distance"
+output: html_document
+date: "2024-07-22"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+
+library(dplyr)
+library(tidyverse)
+library(gt)
+library(readxl)
+library(ggplot2)
+#install.packages("Hmisc")
+library(Hmisc)
+#install.packages("reshape2")
+library(reshape2)
+library(vegan)
+library(graphics)
+#install.packages("gplots")
+library(gplots)
+#install.packages("viridis")
+library(viridis)
+#install.packages("RColorBrewer")
+library(RColorBrewer)
+library(unmarked)
+library(Matrix)
+library(plyr)
+#install.packages("patchwork")
+library(patchwork)
+
+
+#check working directory
+getwd()
+
+##load data from midori database-----------------------
+#MiFish 
+OTU_MiFish <- read_excel("C:/Users/Ellyse.Anderson/OneDrive - USDA/Documents/CPW_Transport_2024/blast_OTU_summary_MiFish_2.xlsx")
+OTU_MiFish$read_length <- nchar((OTU_MiFish$Sequence)) #everything <162 bp is not a fish or too short to be good quality 
+
+#16s
+OTU_16s <- read_excel("C:/Users/Ellyse.Anderson/OneDrive - USDA/Documents/CPW_Transport_2024/blast_OTU_summary_16s_2.xlsx")
+OTU_16s$read_length <- nchar((OTU_16s$Sequence)) # everything <46 bp is not a fish or bad quality, lots of bryozoa under 46 bp
+
+##load data from local database-----------------------
+#MiFish
+OTU_MiFish_RF <- read_excel("C:/Users/Ellyse.Anderson/OneDrive - USDA/Documents/CPW_Transport_2024/blast_OTU_summary_MiFish_2_RF.xlsx")
+OTU_MiFish_RF$read_length <- nchar((OTU_MiFish_RF$Sequence))
+
+#16s
+OTU_16s_RF <- read_excel("C:/Users/Ellyse.Anderson/OneDrive - USDA/Documents/CPW_Transport_2024/blast_OTU_summary_16s_2_RF.xlsx")
+OTU_16s_RF$read_length <- nchar((OTU_16s_RF$Sequence))
+
+##other data------------------------------------------
+#CPW fish codes
+codes <- read_csv("C:/Users/Ellyse.Anderson/OneDrive - USDA/Documents/CPW_Transport_2024/CPW_fish_codes.csv")
+
+#common names
+common_names <- read_excel("C:/Users/Ellyse.Anderson/OneDrive - USDA/Documents/CPW_Transport_2024/transport_distance_collection_data.xlsx", sheet = "common_name")
+
+```
+
+Make DF
+```{r}
+
+##MiFish only-----------------------
+#Midori
+OTU_MiFish_cont <- OTU_MiFish %>%
+  mutate(read_length = nchar((Sequence))) %>%
+  filter(read_length > 161) %>% #filter sequence length 
+  filter(grepl('Actinopteri', Class)) %>% #Actinopteri only
+  dplyr::group_by(Sample, Species) %>%
+  dplyr::summarize(Depth_sum = sum(Depth),
+            .groups = "drop") %>%
+  pivot_wider(names_from = Sample,
+              values_from = Depth_sum) %>%
+  replace(is.na(.), 0) %>%
+  dplyr :: mutate(sum = rowSums(across(where(is.numeric)))) %>%
+  mutate(Species = str_replace(Species, "_[^_]+$", "")) %>% #remove _numbers from species name 
+  mutate(Species = str_replace(Species, "_", " ")) 
+
+#RF (local database)
+OTU_MiFish_RF_cont <- OTU_MiFish_RF %>%
+  mutate(read_length = nchar((Sequence))) %>%
+  filter(read_length > 161) %>% #filter sequence length 
+  dplyr::group_by(Sample, GenBank_ID) %>%
+  dplyr::summarize(Depth_sum = sum(Depth),
+            .groups = "drop") %>%
+  pivot_wider(names_from = Sample,
+              values_from = Depth_sum) %>%
+  replace(is.na(.), 0) %>%
+  dplyr :: mutate(sum = rowSums(across(where(is.numeric)))) 
+
+OTU_MiFish_RF_cont$GenBank_ID <- substr(OTU_MiFish_RF_cont$GenBank_ID, 0, 3) #keep only first three characters in species to match to full name
+
+codes$GenBank_ID <- codes$cpwCode
+OTU_MiFish_RF_cont <- merge(codes, OTU_MiFish_RF_cont, by='GenBank_ID') 
+OTU_MiFish_RF_cont$Species <- OTU_MiFish_RF_cont$latinName #rename latinName
+
+OTU_MiFish_RF_cont <- ddply(OTU_MiFish_RF_cont, (c("GenBank_ID", "commonName", "latinName")),numcolwise(sum)) %>%
+  mutate(Species = str_replace(latinName, "_", " ")) %>% #remove underscore in latinName and rename Species
+  select(-c("GenBank_ID", "commonName", "latinName")) #remove unnecessary columns 
+
+
+##16s only--------------------------
+#Midori
+OTU_16s_cont <- OTU_16s %>%
+  mutate(read_length = nchar((Sequence))) %>%
+  filter(read_length > 45) %>% #filter sequence length 
+  filter(grepl('Actinopteri', Class)) %>% #Actinopteri only
+  dplyr::group_by(Sample, Species) %>%
+  dplyr::summarize(Depth_sum = sum(Depth),
+            .groups = "drop") %>%
+  pivot_wider(names_from = Sample,
+              values_from = Depth_sum) %>%
+  replace(is.na(.), 0) %>%
+  dplyr :: mutate(sum = rowSums(across(where(is.numeric)))) %>%
+  mutate(Species = str_replace(Species, "_[^_]+$", "")) %>% #remove _numbers from species name 
+  mutate(Species = str_replace(Species, "_", " ")) 
+
+#RF (local database)
+OTU_16s_RF_cont <- OTU_16s_RF %>%
+  mutate(read_length = nchar((Sequence))) %>%
+  filter(read_length > 45) %>% #filter sequence length 
+  dplyr::group_by(Sample, GenBank_ID) %>%
+  dplyr::summarize(Depth_sum = sum(Depth),
+            .groups = "drop") %>%
+  pivot_wider(names_from = Sample,
+              values_from = Depth_sum) %>%
+  replace(is.na(.), 0) %>%
+  dplyr :: mutate(sum = rowSums(across(where(is.numeric)))) 
+
+OTU_16s_RF_cont$GenBank_ID <- substr(OTU_16s_RF_cont$GenBank_ID, 0, 3) #keep only first three characters in species to match to full name
+
+codes$GenBank_ID <- codes$cpwCode
+OTU_16s_RF_cont <- merge(codes, OTU_16s_RF_cont, by='GenBank_ID') 
+OTU_16s_RF_cont$Species <- OTU_16s_RF_cont$latinName #rename latinName
+
+OTU_16s_RF_cont <- ddply(OTU_16s_RF_cont, (c("GenBank_ID", "commonName", "latinName")),numcolwise(sum)) %>%
+  mutate(Species = str_replace(latinName, "_", " ")) %>% #remove underscore in latinName and rename Species
+  select(-c("GenBank_ID", "commonName", "latinName")) #remove unnecessary columns 
+
+##Both primers - Midori-----------------------------------------------------------------------------------------
+#have to filter by sequence length separately first, combine raw OTU table and then format similarly to primer-specific tables above
+OTU_MiFish_tomerge <- OTU_MiFish %>%
+  mutate(read_length = nchar((Sequence))) %>%
+  filter(read_length > 161)
+OTU_16s_tomerge <- OTU_16s %>%
+  mutate(read_length = nchar((Sequence))) %>%
+  filter(read_length > 45)
+
+##Merge dfs-----------------------
+df_MiFish_16s <- full_join(OTU_MiFish_tomerge, OTU_16s_tomerge) #because of the merge, some species will be double represented by both primers. Therefore, any abundance measurements are effected by primer specificity
+
+#format df with both primers  
+df_MiFish_16s_cont <- df_MiFish_16s %>%
+   filter(grepl('Actinopteri', Class)) %>% #Actinopteri only
+  dplyr::group_by(Sample, Species) %>%
+  dplyr::summarize(Depth_sum = sum(Depth),
+            .groups = "drop") %>%
+  pivot_wider(names_from = Sample,
+              values_from = Depth_sum) %>%
+  replace(is.na(.), 0) %>%
+  dplyr :: mutate(sum = rowSums(across(where(is.numeric)))) %>%
+  mutate(Species = str_replace(Species, "_[^_]+$", "")) %>% #remove _numbers from species name 
+  mutate(Species = str_replace(Species, "_", " ")) %>%
+  filter(!(Species %in% c("Alburnoides bipunctatus", "Alburnus alburnus", "Ameiurus nebulosus", "Barbus barbus", "Brevoortia patronus", "Brevoortia tyrannus", "Catostomus clarkii", "Catostomus macrocheilus", "Cetengraulis mysticetus", "Coregonus clupeaformis", "Cottus gobio", "Couesius plumbeus", "Cyprinella venusta","Dionda episcopa", "Doras micropoeus", "Etheostoma olmstedi", "Gadus chalcogrammus", "Gasterosteus aculeatus", "Gila cypha", "Gila ditaenia", "Gila nigra", "Gila pandora", "Gobio gobio", "Hybopsis rubrifrons", "Hypophthalmichthys molitrix", "Lasiancistrus tentaculatus", "Margariscus margarita", "Merluccius productus", "Monacoa grimaldii", "Notropis buccata","Oncorhynchus gilae", "Oncorhynchus gorbuscha", "Oncorhynchus kawamurae", "Oncorhynchus keta", "Oncorhynchus tshawytscha", "Parahucho perryi", "Pimephales notatus", "Pimphales tenellus", "Prosopium coulterii","Prosopium cylindraceum", "Rhinichthys atratulus", "Rhinichthys evermanni", "Rhinichthys falcatus", "Rhinichthys obtusus", "Rhinichthys osculus", "Salmo caspius", "Salmo labrax", "Salmo obtusirostris", "Salmo pallaryi", "Salmo salar", "Salvelinus alpinus","Salvelinus confluentus", "Salvelinus curilus", "Salvelinus fontinalis_x_Salvelinus_malma", "Scomberomorus maculatus", "Siphateles bicolor", "Squalius cephalus", "Tiaroga cobitis", "Xyrauchen texanus", "Yuriria alta"))) %>% #species not in CO removed, genus of interest to this project left in for now even if species not found in CO ie. chromosomus eos not detected but chromosomus neogaeus was
+  dplyr :: rename(sum_all = sum)
+ 
+Species_list <- df_MiFish_16s_cont[c('Species')] #To go through the species identified and determine which should remain in the dataframe
+
+
+##Both primers - RF (local database)-----------------------------------------------------------------------
+#filter separately
+OTU_MiFish_RF_tomerge <- OTU_MiFish_RF %>%
+  mutate(read_length = nchar((Sequence))) %>%
+  filter(read_length > 161)
+OTU_16s_RF_tomerge <- OTU_16s_RF %>%
+  mutate(read_length = nchar((Sequence))) %>%
+  filter(read_length > 45)
+
+#merge
+df_MiFish_16s_RF <- full_join(OTU_MiFish_RF_tomerge, OTU_16s_RF_tomerge) %>% #because of the merge, some species will be double represented by both primers. Therefore, any abundance measurements are effected by primer specificity
+  mutate(cpwCode = substr(GenBank_ID, 0, 3)) #keep only first three characters in species to match to full name and rename column to merge w codes df
+
+  
+#format df with both primers from RF database
+df_MiFish_16s_RF_cont <- inner_join(df_MiFish_16s_RF, codes, by = "cpwCode") %>%
+  dplyr::group_by(Sample, latinName) %>%
+  dplyr::summarize(Depth_sum = sum(Depth),
+            .groups = "drop") %>%
+  pivot_wider(names_from = Sample,
+              values_from = Depth_sum) %>%
+  replace(is.na(.), 0) %>%
+  dplyr :: mutate(sum = rowSums(across(where(is.numeric)))) %>%
+  mutate(Species = str_replace(latinName, "_", " ")) %>%
+  select(-c("latinName")) %>% #remove latinName column
+  dplyr :: rename(sum_all = sum) %>%
+  dplyr :: mutate(sum_05 = rowSums(across(contains("05")), na.rm = TRUE)) %>% #subset RRA by sampling location, first sum 
+  dplyr :: mutate(sum_100 = rowSums(across(contains("100")), na.rm = TRUE)) %>%
+  dplyr :: mutate(sum_200 = rowSums(across(contains("200")), na.rm = TRUE)) %>%
+  dplyr :: mutate(sum_400 = rowSums(across(contains("400")), na.rm = TRUE)) %>%
+  dplyr :: mutate(sum_800 = rowSums(across(contains("800")), na.rm = TRUE)) %>%
+  dplyr :: mutate(sum_1600 = rowSums(across(contains("1600")), na.rm = TRUE)) 
+
+#sum of each distance
+all_fish_sum <- df_MiFish_16s_RF_cont %>%
+  mutate('05' = sum(sum_05)) %>%
+  mutate('100' = sum(sum_100)) %>%
+  mutate('200' = sum(sum_200)) %>%
+  mutate('400' = sum(sum_400)) %>%
+  mutate('800' = sum(sum_800)) %>%
+  mutate('1600' = sum(sum_1600)) %>%
+  slice(1) %>%
+  pivot_longer(cols = '05':'1600', names_to = "Distance", values_to = "Reads") 
+  
+ggplot(all_fish_sum, aes(x= Distance, y= Reads)) +
+  geom_bar(stat = "identity")
+
+mean_data <- c(2812834, 2166852, 6043200, 6185659, 5779351, 5980739)
+t_test_result <- t.test(mean_data, mu = 2166852) #05 and 100 significant
+t_test_result
+
+?rename()
+
+```
+
+
+Preliminary data visualization
+```{r}
+#05 m 
+df_05 <- df_MiFish_16s_RF_cont %>%
+  select((contains("_05_")), (c("Species"))) %>%
+  select(-contains('_C_')) %>% #remove Cs
+  mutate(sum_T0 = rowSums(select(., contains("T0")))) %>% #sum btw same time period
+  mutate(sum_T1 = rowSums(select(., contains("T1")))) %>%
+  mutate(sum_T2 = rowSums(select(., contains("T2")))) %>%
+  mutate(sum_T3 = rowSums(select(., contains("T3")))) %>%
+  mutate(sum_T4 = rowSums(select(., contains("T4")))) %>%
+  mutate(sum_T5 = rowSums(select(., contains("T5")))) %>%
+  mutate(sum_T6 = rowSums(select(., contains("T6")))) %>%
+  mutate(sum_T7 = rowSums(select(., contains("T7")))) %>%
+  filter(grepl(paste(caged_species, collapse='|'), Species))
+
+gt_05 <- gt(df_05[c(25:33)]) 
+gt_05
+
+
+#100 m 
+df_100 <- df_MiFish_16s_RF_cont %>%
+  select((contains("_100_")), (c("Species"))) %>%
+  select(-contains('_C_')) %>% #remove Cs
+  mutate(sum_T0 = rowSums(select(., contains("T0")))) %>% #sum btw same time period
+  mutate(sum_T1 = rowSums(select(., contains("T1")))) %>%
+  mutate(sum_T2 = rowSums(select(., contains("T2")))) %>%
+  mutate(sum_T3 = rowSums(select(., contains("T3")))) %>%
+  mutate(sum_T4 = rowSums(select(., contains("T4")))) %>%
+  mutate(sum_T5 = rowSums(select(., contains("T5")))) %>%
+  mutate(sum_T6 = rowSums(select(., contains("T6")))) %>%
+  mutate(sum_T7 = rowSums(select(., contains("T7")))) %>%
+  filter(grepl(paste(caged_species, collapse='|'), Species))
+
+gt_100 <- gt(df_100[c(25:33)]) 
+gt_100
+
+#200 m 
+df_200 <- df_MiFish_16s_cont %>%
+  select((contains("_200_")), (c("Species"))) %>%
+  select(-contains('_C_')) %>% #remove Cs
+  mutate(sum_T0 = rowSums(select(., contains("T0")))) %>% #sum btw same time period
+  mutate(sum_T1 = rowSums(select(., contains("T1")))) %>%
+  mutate(sum_T2 = rowSums(select(., contains("T2")))) %>%
+  mutate(sum_T3 = rowSums(select(., contains("T3")))) %>%
+  mutate(sum_T4 = rowSums(select(., contains("T4")))) %>%
+  mutate(sum_T5 = rowSums(select(., contains("T5")))) %>%
+  mutate(sum_T6 = rowSums(select(., contains("T6")))) %>%
+  mutate(sum_T7 = rowSums(select(., contains("T7"))))
+
+gt_200 <- gt(df_200[c(25:33)]) 
+gt_200
+
+
+#400 m 
+df_400 <- df_MiFish_16s_cont %>%
+  select((contains("_400_")), (c("Species"))) %>%
+  select(-contains('_C_')) %>% #remove Cs
+  mutate(sum_T0 = rowSums(select(., contains("T0")))) %>% #sum btw same time period
+  mutate(sum_T1 = rowSums(select(., contains("T1")))) %>%
+  mutate(sum_T2 = rowSums(select(., contains("T2")))) %>%
+  mutate(sum_T3 = rowSums(select(., contains("T3")))) %>%
+  mutate(sum_T4 = rowSums(select(., contains("T4")))) %>%
+  mutate(sum_T5 = rowSums(select(., contains("T5")))) %>%
+  mutate(sum_T6 = rowSums(select(., contains("T6")))) %>%
+  mutate(sum_T7 = rowSums(select(., contains("T7"))))
+
+#1600 m 
+df_1600 <- df_MiFish_16s_RF_cont %>%
+  select((contains("_1600_")), (c("Species"))) %>%
+  select(-contains('_C_')) %>% #remove Cs
+  mutate(sum_T0 = rowSums(select(., contains("T0")))) %>% #sum btw same time period
+  mutate(sum_T1 = rowSums(select(., contains("T1")))) %>%
+  mutate(sum_T2 = rowSums(select(., contains("T2")))) %>%
+  mutate(sum_T3 = rowSums(select(., contains("T3")))) %>%
+  mutate(sum_T4 = rowSums(select(., contains("T4")))) %>%
+  mutate(sum_T5 = rowSums(select(., contains("T5")))) %>%
+  mutate(sum_T6 = rowSums(select(., contains("T6")))) %>%
+  mutate(sum_T7 = rowSums(select(., contains("T7"))))
+
+
+```
+
+
+Relative read abundance (RRA) by time and distance
+```{r}
+#RRA of caged species only---------------
+#Subset df 
+caged_species <- c('Phenacobius mirabilis', 'Campostoma anomalum', 'Hybognathus hankinsoni', 'Luxilus cornutus', 'Chrosomus eos', 'Noturus flavus')
+caged_subset <- df_MiFish_16s_cont %>% filter(grepl(paste(caged_species, collapse='|'), Species))
+#subset df from RF
+caged_subset_RF <- df_MiFish_16s_RF_cont %>% filter(grepl(paste(caged_species, collapse='|'), Species)) %>%
+  left_join(common_names, by = "Species") #add common names
+
+#subset field controls to see potential contamination
+field_controls <- caged_subset_RF %>% select(c(Species, (matches("_C_")))) #major contamination in 4 field controls. 
+
+#RRA by time period and distance data frame--------------------------------
+RRA_caged <- caged_subset_RF %>%
+  select(-Undetermined_S0) %>%  
+  dplyr :: mutate(across(c(1:207), ~ if_else(. <= 16, 0, .))) %>% #highest EB caged = 2, most control contamination under 16 except for few samples w read numbers >5468 that will be addressed on a sample by sample basis, use cut off of 16 for contamination across all samples. Change this line to (2:208) for ncbi database
+  #remove samples w field control contamination by species of contamination
+  mutate(T3_400_SR2_S86 = replace(T3_400_SR2_S86, Species == "Phenacobius mirabilis", 0)) %>%
+  mutate(T3_400_SR3_S87 = replace(T3_400_SR3_S87, Species == "Campostoma anomalum", 0)) %>%
+  mutate(T5_400_SR3_S135 = replace(T5_400_SR3_S135, Species == "Hybognathus hankinsoni", 0)) %>%
+  dplyr :: select(-(matches("_C_S"))) %>%  #remove all field control samples so they are not counted as "absences" in occupancy modeling
+  mutate(RRA = sum_all/(sum(sum_all))) %>% #RAA gives total relative abundance of caged species across all samples/times
+  dplyr :: mutate(sum_T0 = rowSums(across(contains("T0")), na.rm = TRUE)) %>% #subset RRA by time period, first sum across time period
+  dplyr :: mutate(sum_T1 = rowSums(across(contains("T1")), na.rm = TRUE)) %>%
+  dplyr :: mutate(sum_T2 = rowSums(across(contains("T2")), na.rm = TRUE)) %>%
+  dplyr :: mutate(sum_T3 = rowSums(across(contains("T3")), na.rm = TRUE)) %>%
+  dplyr :: mutate(sum_T4 = rowSums(across(contains("T4")), na.rm = TRUE)) %>%
+  dplyr :: mutate(sum_T5 = rowSums(across(contains("T5")), na.rm = TRUE)) %>%
+  dplyr :: mutate(sum_T6 = rowSums(across(contains("T6")), na.rm = TRUE)) %>%
+  dplyr :: mutate(sum_T7 = rowSums(across(contains("T7")), na.rm = TRUE)) %>%
+  mutate(RRA_T0 = sum_T0/(sum(sum_T0))) %>% #calculate RRA of each time period
+  mutate(RRA_T1 = sum_T1/(sum(sum_T1))) %>%
+  mutate(RRA_T2 = sum_T2/(sum(sum_T2))) %>%
+  mutate(RRA_T3 = sum_T3/(sum(sum_T3))) %>%
+  mutate(RRA_T4 = sum_T4/(sum(sum_T4))) %>%
+  mutate(RRA_T5 = sum_T5/(sum(sum_T5))) %>%
+  mutate(RRA_T6 = sum_T6/(sum(sum_T6))) %>%
+  mutate(RRA_T7 = sum_T7/(sum(sum_T7))) %>% 
+  dplyr :: mutate(sum_05 = rowSums(across(contains("05")), na.rm = TRUE)) %>% #subset RRA by sampling location, first sum 
+  dplyr :: mutate(sum_100 = rowSums(across(contains("100")), na.rm = TRUE)) %>%
+  dplyr :: mutate(sum_200 = rowSums(across(contains("200")), na.rm = TRUE)) %>%
+  dplyr :: mutate(sum_400 = rowSums(across(contains("400")), na.rm = TRUE)) %>%
+  dplyr :: mutate(sum_800 = rowSums(across(contains("800")), na.rm = TRUE)) %>%
+  dplyr :: mutate(sum_1600 = rowSums(across(contains("1600")), na.rm = TRUE)) %>% #calculate RRA of each distance 
+  mutate(RRA_05 = sum_05/(sum(sum_05))) %>%
+  mutate(RRA_100 = sum_100/(sum(sum_100))) %>%
+  mutate(RRA_200 = sum_200/(sum(sum_200))) %>%
+  mutate(RRA_400 = sum_400/(sum(sum_400))) %>%
+  mutate(RRA_800 = sum_800/(sum(sum_800))) %>%
+  mutate(RRA_1600 = sum_1600/(sum(sum_1600)))
+
+
+#pie chart of RRA over entire study-------------------------
+piechart <- ggplot(RRA_caged, aes(x="", y=RRA, fill=common_name)) +
+  geom_bar(stat="identity", width=1) +
+  coord_polar("y", start=0) + #add this line to go from bar graph to pie graph
+  theme(panel.background = element_blank(), #remove background shading
+         axis.text = element_blank(), 
+        axis.title = element_blank()) + 
+  labs(fill = 'Species') + #rename legend
+  scale_fill_viridis_d() 
+
+print(piechart)
+ggsave("pie_chart.png", plot = piechart)
+
+
+#Time period RRA graphing---------------------------
+#subset RRA by time period for graphing
+#need to wrangle data so that multiple columns can be graphed 
+RRA_time_periods <- RRA_caged %>%
+  dplyr::select(Species, RRA_T0: RRA_T7) %>%
+  replace(is.na(.), 0) %>%
+  pivot_longer(names_to = "Time", values_to = "RRA",-c(Species))
+
+#stacked bar plot, RRA by time period
+ggplot(RRA_time_periods, aes(x=Time, y=RRA, fill=Species)) + geom_bar(stat="identity", width=1)
+
+#Location RRA graphing------------------------------
+#subset RRA by location for graphing 
+RRA_location <- RRA_caged %>%
+  dplyr::select(common_name, RRA_05: RRA_1600) %>%
+  replace(is.na(.), 0) %>%
+  pivot_longer(names_to = "Distance", values_to = "RRA",-c(common_name)) %>%
+  mutate(Distance = str_remove(Distance, "RRA_")) %>% #remove RRA_ 
+  mutate(Distance = str_replace(Distance, "05", "5"))
+
+
+RRA_location$Distance <- factor(RRA_location$Distance, levels=c('5', '100', '200', '400', '800', '1600')) #reorder for ascending distance
+ 
+#stacked bar plot, RRA by location
+bar_dist <- ggplot(RRA_location, aes(x=Distance, y=RRA, fill=common_name)) + geom_bar(stat="identity", width=1) + theme_classic() + xlab("Distance (m)") + labs(fill = 'Species') + scale_fill_viridis_d() 
+print(bar_dist)
+ggsave("stacked_bar_dist.png", plot = bar_dist)
+
+##stacked bar plot, RRA by location before and after fish in water------------------------
+#while fish are in water T1-T3
+RRA_location_fish_in <- RRA_caged %>%
+  dplyr::select(c(common_name, (matches('T1_|T2_|T3_')))) %>%
+  dplyr::mutate(sum_05 = rowSums(across(contains("05")), na.rm = TRUE)) %>% #subset RRA by sampling location, first sum 
+  dplyr :: mutate(sum_100 = rowSums(across(contains("100")), na.rm = TRUE)) %>%
+  dplyr :: mutate(sum_200 = rowSums(across(contains("200")), na.rm = TRUE)) %>%
+  dplyr :: mutate(sum_400 = rowSums(across(contains("400")), na.rm = TRUE)) %>%
+  dplyr :: mutate(sum_800 = rowSums(across(contains("800")), na.rm = TRUE)) %>%
+  dplyr :: mutate(sum_1600 = rowSums(across(contains("1600")), na.rm = TRUE)) %>% #calculate RRA of each distance 
+  mutate(RRA_05 = sum_05/(sum(sum_05))) %>%
+  mutate(RRA_100 = sum_100/(sum(sum_100))) %>%
+  mutate(RRA_200 = sum_200/(sum(sum_200))) %>%
+  mutate(RRA_400 = sum_400/(sum(sum_400))) %>%
+  mutate(RRA_800 = sum_800/(sum(sum_800))) %>%
+  mutate(RRA_1600 = sum_1600/(sum(sum_1600))) %>%
+  dplyr::select(c(common_name, RRA_05:RRA_1600)) %>% #select only RRAs
+  replace(is.na(.), 0) %>%
+  pivot_longer(names_to = "Distance", values_to = "RRA",-c(common_name)) %>%
+  mutate(Distance = str_remove(Distance, "RRA_")) %>% #remove RRA_ 
+  mutate(Distance = str_replace(Distance, "05", "5"))
+
+RRA_location_fish_in$Distance <- factor(RRA_location_fish_in$Distance, levels = c(5, 100, 200, 400, 800, 1600)) #reorder the columns
+  
+bar_dist_fish_in <- ggplot(RRA_location_fish_in, aes(x=Distance, y=RRA, fill=common_name)) + geom_bar(stat="identity", width=1) + theme_classic() + xlab("Distance (m)") + labs(fill = 'Species') + scale_fill_viridis_d() 
+print(bar_dist_fish_in)
+
+ggsave("stacked_bar_dist_fish_in.png", plot = bar_dist_fish_in)
+  
+#after fish removed T4-T7
+RRA_location_fish_out <- RRA_caged %>%
+  dplyr::select(c(common_name, (matches('T4_|T5_|T6_|T7_')))) %>%
+  dplyr::mutate(sum_05 = rowSums(across(contains("05")), na.rm = TRUE)) %>% #subset RRA by sampling location, first sum 
+  dplyr :: mutate(sum_100 = rowSums(across(contains("100")), na.rm = TRUE)) %>%
+  dplyr :: mutate(sum_200 = rowSums(across(contains("200")), na.rm = TRUE)) %>%
+  dplyr :: mutate(sum_400 = rowSums(across(contains("400")), na.rm = TRUE)) %>%
+  dplyr :: mutate(sum_800 = rowSums(across(contains("800")), na.rm = TRUE)) %>%
+  dplyr :: mutate(sum_1600 = rowSums(across(contains("1600")), na.rm = TRUE)) %>% #calculate RRA of each distance 
+  mutate(RRA_05 = sum_05/(sum(sum_05))) %>%
+  mutate(RRA_100 = sum_100/(sum(sum_100))) %>%
+  mutate(RRA_200 = sum_200/(sum(sum_200))) %>%
+  mutate(RRA_400 = sum_400/(sum(sum_400))) %>%
+  mutate(RRA_800 = sum_800/(sum(sum_800))) %>%
+  mutate(RRA_1600 = sum_1600/(sum(sum_1600))) %>%
+  dplyr::select(c(common_name, RRA_05:RRA_1600)) %>% #select only RRAs
+  replace(is.na(.), 0) %>%
+  pivot_longer(names_to = "Distance", values_to = "RRA",-c(common_name)) %>%
+  mutate(Distance = str_remove(Distance, "RRA_")) %>% #remove RRA_ 
+  mutate(Distance = str_replace(Distance, "05", "5"))
+
+RRA_location_fish_out$Distance <- factor(RRA_location_fish_out$Distance, levels = c(5, 100, 200, 400, 800, 1600)) #reorder the columns
+  
+bar_dist_fish_out <- ggplot(RRA_location_fish_out, aes(x=Distance, y=RRA, fill=common_name)) + geom_bar(stat="identity", width=1) + theme_classic() + xlab("Distance (m)") + labs(fill = 'Species') + scale_fill_viridis_d() 
+print(bar_dist_fish_out)
+
+ggsave("stacked_bar_dist_fish_out.png", plot = bar_dist_fish_out)
+
+#Total reads across time (to see flushing)--------------------------
+Total_reads <- RRA_caged %>%
+  mutate('0' = sum(sum_T0)) %>% #calculate sum of total hits (not RRA) over time to see flushing
+  mutate('1' = sum(sum_T1)) %>%
+  mutate('2' = sum(sum_T2)) %>%
+  mutate('3' = sum(sum_T3)) %>%
+  mutate('4' = sum(sum_T4)) %>%
+  mutate('5' = sum(sum_T5)) %>%
+  mutate('6' = sum(sum_T6)) %>%
+  mutate('7' = sum(sum_T7)) %>%
+  slice_head(n=1) %>%
+  pivot_longer(cols = '0':'7', names_to = "Time", values_to = "Reads") 
+
+readstime <- ggplot(Total_reads, aes(x= Time, y= Reads)) +
+  geom_bar(stat = "identity") +
+  theme_classic() +
+  geom_vline(xintercept = 1.5, color = "gray", linetype = "dashed", size = 1) +
+  geom_vline(xintercept = 4.5, color = "gray", linetype = "dashed", size = 1)#no reads at T0, drop in reads at T2
+print(readstime)
+
+ggsave("reads_time_bar.png", plot = readstime)
+
+#Total reads across distance---------------------------------------
+Total_reads_dist <- RRA_caged %>%
+  mutate(`5` = sum(sum_05)) %>% #calculate sum of total hits (not RRA) over time to see flushing
+  mutate(`100` = sum(sum_100)) %>%
+  mutate(`200` = sum(sum_200)) %>%
+  mutate(`400` = sum(sum_400)) %>%
+  mutate(`800` = sum(sum_800)) %>%
+  mutate(`1600` = sum(sum_1600)) %>%
+  slice_head(n=1) %>%
+  pivot_longer(cols = `5`:`1600`, names_to = "Distance", values_to = "Reads") 
+
+Total_reads_dist$Distance <- factor(Total_reads_dist$Distance, levels = c(5, 100, 200, 400, 800, 1600)) #reorder the columns
+  
+readsdistance <- ggplot(Total_reads_dist, aes(x= Distance, y= Reads)) +
+  geom_bar(stat = "identity") +
+  theme_classic() +
+  xlab("Distance (m)") 
+
+print(readsdistance)
+
+ggsave("reads_dist_bar.png", plot = readsdistance)
+  
+#t-test--------------------
+##reads when fish are in the water (T1-T3) compared to reads after fish are removed (T4-T7)
+
+fish_in <- c(63672, 15434, 65942)
+fish_out <- c(2489, 0, 453, 783)
+
+t_test <- t.test(fish_in, fish_out)
+print(t_test) #no significant difference
+
+#check normality 
+shapiro.test(fish_in) #normal
+shapiro.test(fish_out) #normal
+
+#check homogeneity of variance
+var.test(fish_in, fish_out) #variance unequal -> welch's t test (already ran above)
+
+#difference of reads at 100 m to other distances
+a <- sum(RRA_caged$sum_05)
+b <- sum(RRA_caged$sum_100)
+c <- sum(RRA_caged$sum_200)
+d <- sum(RRA_caged$sum_400)
+e <- sum(RRA_caged$sum_800)
+f <- sum(RRA_caged$sum_1600)
+
+sum_distances <- c(a, b, c, d, e, f)
+t_test_result <- t.test(sum_distances, mu = b)
+t_test_result #significant, 05 is also sig
+
+```
+
+Reads by species
+```{r}
+#Time--------------------------------
+#data wrangling for bar graphs
+df_plotting <- RRA_caged %>%
+  dplyr::select(Species, sum_T0:sum_T7) %>%
+  pivot_longer(names_to = "Time", values_to = "Reads",-c(Species)) %>%
+  mutate(Time = sub("^.*_", "", Time)) %>% #remove sum_
+  mutate(Time = sub("T", "", Time)) #remove T
+
+split_df <- split(df_plotting, df_plotting$Species)
+  
+
+#hankinsoni
+Hh <- ggplot(split_df$`Hybognathus hankinsoni`, aes(x=Time, y=Reads)) + 
+  geom_bar(stat="identity", width=1) + 
+  labs(title = "Brassy Minnow") + 
+  #geom_text(aes(label = Reads), vjust = -0.5, size = 3) + # Add numbers above the bars
+  theme_classic() +
+  geom_vline(xintercept = 1.5, color = "gray", linetype = "dashed", size = 1) +
+  geom_vline(xintercept = 4.5, color = "gray", linetype = "dashed", size = 1)
+Hh
+
+#anomalum
+Ca <- ggplot(split_df$`Campostoma anomalum`, aes(x=Time, y=Reads)) + 
+  geom_bar(stat="identity", width=1) +  
+  labs(title = "Central Stoneroller") +
+  #geom_text(aes(label = Reads), vjust = -0.5, size = 3) + # Add numbers above the bars
+  theme_classic() +
+  geom_vline(xintercept = 1.5, color = "gray", linetype = "dashed", size = 1) +
+  geom_vline(xintercept = 4.5, color = "gray", linetype = "dashed", size = 1)
+
+#mirabilis
+Pm <- ggplot(split_df$`Phenacobius mirabilis`, aes(x=Time, y=Reads)) + 
+  geom_bar(stat="identity", width=1) +  
+  labs(title = "Suckermouth Minnow") +
+  #geom_text(aes(label = Reads), vjust = -0.5, size = 3) + # Add numbers above the bars
+  theme_classic()+
+  geom_vline(xintercept = 1.5, color = "gray", linetype = "dashed", size = 1) +
+  geom_vline(xintercept = 4.5, color = "gray", linetype = "dashed", size = 1)
+
+#cornutus
+Lc <- ggplot(split_df$`Luxilus cornutus`, aes(x=Time, y=Reads)) + 
+  geom_bar(stat="identity", width=1) +  
+  labs(title = "Common Shiner") +
+  #geom_text(aes(label = Reads), vjust = -0.5, size = 3) + # Add numbers above the bars
+  theme_classic()+
+  geom_vline(xintercept = 1.5, color = "gray", linetype = "dashed", size = 1) +
+  geom_vline(xintercept = 4.5, color = "gray", linetype = "dashed", size = 1)
+
+#eos 
+Ce <- ggplot(split_df$`Chrosomus eos`, aes(x=Time, y=Reads)) + 
+  geom_bar(stat="identity", width=1) +  
+  labs(title = "Northern Redbelly Dace") +
+  #geom_text(aes(label = Reads), vjust = -0.5, size = 3) + # Add numbers above the bars
+  theme_classic()+
+  geom_vline(xintercept = 1.5, color = "gray", linetype = "dashed", size = 1) +
+  geom_vline(xintercept = 4.5, color = "gray", linetype = "dashed", size = 1)
+
+#flavus
+Nf <- ggplot(split_df$`Noturus flavus`, aes(x=Time, y=Reads)) + 
+  geom_bar(stat="identity", width=1) +  
+  labs(title = "Stonecat") +
+  #geom_text(aes(label = Reads), vjust = -0.5, size = 3) + # Add numbers above the bars
+  theme_classic()+
+  geom_vline(xintercept = 1.5, color = "gray", linetype = "dashed", size = 1) +
+  geom_vline(xintercept = 4.5, color = "gray", linetype = "dashed", size = 1)
+Nf
+
+#combine all plots
+combined_plot <- (Hh | Ca | Pm)/(Lc | Ce | Nf)
+combined_plot
+
+#to export
+ggsave("combined_plot.png", plot = combined_plot, width = 10, height = 8, dpi = 300)
+
+
+#Distance-----------------------------------
+
+df_plotting <- RRA_caged %>%
+  dplyr::select(Species, sum_05:sum_1600) %>%
+  pivot_longer(names_to = "Distance", values_to = "Reads",-c(Species)) %>%
+  mutate(Time = sub("^.*_", "", Distance))  #remove sum_
+ 
+split_df_dist <- split(df_plotting, df_plotting$Species)
+
+#hankinsoni
+Hh <- ggplot(split_df_dist$`Hybognathus hankinsoni`, aes(x=Distance, y=Reads)) + 
+  geom_bar(stat="identity", width=1) + 
+  labs(title = "Brassy Minnow") + 
+  geom_text(aes(label = Reads), vjust = -0.5) + # Add numbers above the bars
+  theme_minimal()
+
+
+#anomalum
+Ca <- ggplot(split_df_dist$`Campostoma anomalum`, aes(x=Distance, y=Reads)) + 
+  geom_bar(stat="identity", width=1) +  
+  labs(title = "Central Stoneroller") +
+  geom_text(aes(label = Reads), vjust = -0.5) + # Add numbers above the bars
+  theme_minimal()
+
+#mirabilis
+Pm <- ggplot(split_df_dist$`Phenacobius mirabilis`, aes(x=Distance, y=Reads)) + 
+  geom_bar(stat="identity", width=1) +  
+  labs(title = "Suckermouth Minnow") +
+  geom_text(aes(label = Reads), vjust = -0.5) + # Add numbers above the bars
+  theme_minimal()
+
+#cornutus
+Lc <- ggplot(split_df_dist$`Luxilus cornutus`, aes(x=Distance, y=Reads)) + 
+  geom_bar(stat="identity", width=1) +  
+  labs(title = "Common Shiner") +
+  geom_text(aes(label = Reads), vjust = -0.5) + # Add numbers above the bars
+  theme_minimal()
+
+#eos 
+Ce <- ggplot(split_df_dist$`Chrosomus eos`, aes(x=Distance, y=Reads)) + 
+  geom_bar(stat="identity", width=1) +  
+  labs(title = "Northern Redbelly Dace") +
+  geom_text(aes(label = Reads), vjust = -0.5) + # Add numbers above the bars
+  theme_minimal()
+
+#flavus
+Nf <- ggplot(split_df_dist$`Noturus flavus`, aes(x=Distance, y=Reads)) + 
+  geom_bar(stat="identity", width=1) +  
+  labs(title = "Stonecat") +
+  geom_text(aes(label = Reads), vjust = -0.5) + # Add numbers above the bars
+  theme_minimal()
+
+
+#combine all plots
+combined_plot <- (Hh | Ca | Pm)/(Lc | Ce | Nf)
+combined_plot
+
+#to export
+ggsave("combined_plot.png", plot = combined_plot, width = 10, height = 8, dpi = 300)
+
+```
+
+
+Linear regression - RRA and biomass
+```{r}
+#linear regression biomass vs. caged RRA-------------------------
+#load biomass data
+biomass <- read_excel("C:/Users/Ellyse.Anderson/OneDrive - USDA/Documents/CPW_Transport_2024/transport_distance_collection_data.xlsx", sheet = "Biomass")
+
+#combine dfs
+RRA_caged_biomass <- full_join(RRA_caged, biomass, by = "Species") %>%
+ replace(is.na(.), 0) %>%
+filter(!grepl("Noturus flavus", Species))  #remove n flavus to see linear regression plot 
+
+##linear regression model
+#total RRA
+lr_model <- lm(RRA~Biomass_g, data = RRA_caged_biomass)
+summary(lr_model) #not significant: F-statistic: 2.142, 3 DF,  p-value: 0.2395
+
+#at difference distances, change the distance to see "RRA_XX"
+lr_model2 <- lm(RRA_1600~Biomass_g, data = RRA_caged_biomass)
+summary(lr_model2) #there is stat significance at some distances: 200m, 1600m (when n flavus removed)
+#without n flavus data
+lr_model3 <- lm(RRA[1:5]~Biomass_g[1:5], data = RRA_caged_biomass)
+summary(lr_model3) #still not significant 
+
+#plot
+##across all 
+lm <- ggplot(RRA_caged_biomass,aes(Biomass_g, RRA)) +
+  geom_point() +
+  geom_smooth(method='lm') + #no correlation
+  theme_classic() + 
+  labs(x = "Biomass (g)")
+print(lm)
+
+ggsave("linear_regression.png", plot = lm)
+
+```
+
+
+Correlation coefficient heatmap
+```{r}
+#make df 
+RRA_location_biomass <- RRA_caged_biomass %>%
+  dplyr::select(Species, Biomass_g, RRA_05: RRA_1600) %>%
+  replace(is.na(.), 0) %>%
+  mutate(relative_biomass = (Biomass_g/sum(Biomass_g)))  %>% #calculate relative biomass
+  pivot_longer(names_to = "Location", values_to = "RRA",-c(Species, Biomass_g, relative_biomass))
+
+#05m subset-------------------------------
+D_05 <- RRA_location_biomass %>%
+  filter(grepl('RRA_05', Location))
+
+#100m subset-------------------------------
+D_100 <- RRA_location_biomass %>%
+  filter(grepl('RRA_100', Location))
+
+#200m subset------------------------------
+D_200 <- RRA_location_biomass %>%
+  filter(grepl('RRA_200', Location))
+
+##test for normality
+shapiro.test(D_200$RRA) #normally distributed
+shapiro.test(D_200$Biomass_g) #normally distributed
+shapiro.test(D_200$relative_biomass) #normally distributed
+
+##correlation coefficient
+res <- cor.test(RRA_location_biomass$RRA, RRA_location_biomass$Biomass_g, method = "pearson") #p = 0.7947 so there is no significant correlation between RRA and biomass of caged species (t = 0.26221, df = 34, cor = 0.04492276)
+res #gives correlation btw RRA and biomass (and significance) by distance
+#correlation matrix
+D_200_cor <- D_200 %>% select(RRA, Biomass_g)
+cor <- round(cor(D_200_cor), 2)
+
+?cor.test()
+
+#pearsons correlation coefficient
+#calculate correlation coefficient between biomass and RRA by location
+heatmap_df <- RRA_location_biomass %>%
+ dplyr :: group_by(Location) %>%
+ dplyr :: summarize(cor=cor(Biomass_g, RRA)) %>%
+ mutate(Location = str_replace(Location, "^.*?_", "")) %>% #remove RRA_ from distances
+ arrange(match(Location, c("05", "100", "200", "400", "800", "1600"))) #arrange so ordered by distance
+
+#There is no correlation or pattern between RRA and biomass over distance. this is unsurprising in a low flow lotic system with low species of interest biomass (see Van Driessche 2023 et al)
+
+#heat map------------------------------------
+#df for heatmap labels (only cor numbers)
+heatmap_df_2 <- heatmap_df %>%
+  select(-Location) %>%
+  mutate(across(c('cor'), round, 2)) %>% #round correlation coeff
+  pivot_wider(names_from = cor, values_from = cor) 
+
+#plot
+heatmap.2(rbind(heatmap_df$cor,heatmap_df$cor), trace="n", Colv=NA, Rowv=FALSE,dendrogram="none", labRow="", labCol=heatmap_df$Location, xlab = "Distance (m)", ylab = "", main = "Title", cexCol = 0.6, col=brewer.pal(9,"OrRd"), cellnote = heatmap_df_2,  notecol="black")
+#use png to save the image when finalized
+
+#no real trend between RRA and biomass across distance
+
+#heatmap with ncbi database shows high correlation btw biomass and RRA at 100 and 200 m, drops at 400 and 800 m, high again at 1600 m. 
+
+```
+
+
+RRA over time - line graph
+```{r}
+#data wrangling------------
+##RRA across the entire study ie. still separated by species and time but divided by the total caged reads across study to show reads in system over time
+##new RRA_caged to not mess with previous code
+
+RRA_caged_1 <- RRA_caged %>%
+  mutate(total_caged_reads = (sum(sum_all))) %>% #total caged reads detected
+  mutate(stand_T0 = sum_T0/(total_caged_reads)) %>% #standardize reads per time period by total caged reads
+  mutate(stand_T1 = sum_T1/(total_caged_reads)) %>%
+  mutate(stand_T2 = sum_T2/(total_caged_reads)) %>%
+  mutate(stand_T3 = sum_T3/(total_caged_reads)) %>%
+  mutate(stand_T4 = sum_T4/(total_caged_reads)) %>%
+  mutate(stand_T5 = sum_T5/(total_caged_reads)) %>%
+  mutate(stand_T6 = sum_T6/(total_caged_reads)) %>%
+  mutate(stand_T7 = sum_T7/(total_caged_reads))
+
+##df for graphing
+df_time <- RRA_caged_1 %>%
+  select(common_name, stand_T0:stand_T7) %>%
+  pivot_longer(names_to = "Time", values_to = "RRA", -c(common_name))
+df_time$Time <- substr(df_time$Time, 8, 9) #keep only T#
+
+
+#graphing-----------------
+RRA_time <- ggplot(df_time, aes(x = Time, y=RRA, group = common_name)) +
+  geom_area(aes(fill = common_name)) +
+  theme_classic() +
+  labs(fill = 'Species') + #rename legend
+  scale_fill_viridis_d() +
+  geom_vline(xintercept = 1, color = "gray", linetype = "dashed", size = 1) +
+  geom_vline(xintercept = 5, color = "gray", linetype = "dashed", size = 1) + #no reads at T0, drop in reads at T2 
+  geom_vline(xintercept = 3, color = "gray", size = 1)
+RRA_time
+
+ggsave("RRA_time_line.png", plot = RRA_time)
+#standardize RRA by volume filtered? or more of a discussion point?
+#use percentage instead of raw RRA on y axis 
+
+```
+
+
+RRA over distance - line graph
+```{r}
+RRA_caged_2 <- RRA_caged %>%
+  mutate(total_caged_reads = (sum(sum_all))) %>% #total caged reads detected
+  mutate(stand_05 = sum_05/(total_caged_reads)) %>% #standardize reads per distance by total caged reads
+  mutate(stand_100 = sum_100/(total_caged_reads)) %>%
+  mutate(stand_200 = sum_200/(total_caged_reads)) %>%
+  mutate(stand_400 = sum_400/(total_caged_reads)) %>%
+  mutate(stand_800 = sum_800/(total_caged_reads)) %>%
+  mutate(stand_1600 = sum_1600/(total_caged_reads)) 
+
+##df for graphing
+df_dist <- RRA_caged_2 %>%
+  select(Species, stand_05:stand_1600) %>%
+  pivot_longer(names_to = "Distance", values_to = "RRA", -c(Species)) %>%
+  mutate(Distance = sub("^[^_]*_", "", Distance)) #keep only actual number distance
+    
+
+#graphing-----------------
+ggplot(df_dist, aes(x = factor(Distance, level=c('05', '100', '200', '400', '800', '1600')), y=RRA, group = Species, color = Species)) +
+  geom_area(aes(fill = Species)) +
+  xlab("Distance (m)") +
+  theme_classic()
+
+#shows very low total reads at 100m and 1600m
+
+```
+
+
+RDA
+```{r}
+location_rda <- rda(formula = nmds_df[,2:7] ~ Location, data =
+nmds_df, distance = "bray") 
+summary(location_rda)
+plot(location_rda) #shows the effect of the explanatory variables
+
+```
+
+
+
