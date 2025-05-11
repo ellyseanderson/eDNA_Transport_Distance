@@ -351,12 +351,12 @@ RRA_caged <- caged_subset_RF %>%
   mutate(RRA_T5 = sum_T5/(sum(sum_T5))) %>%
   mutate(RRA_T6 = sum_T6/(sum(sum_T6))) %>%
   mutate(RRA_T7 = sum_T7/(sum(sum_T7))) %>% 
-  dplyr :: mutate(sum_05 = rowSums(across(contains("05")), na.rm = TRUE)) %>% #subset RRA by sampling location, first sum 
-  dplyr :: mutate(sum_100 = rowSums(across(contains("100")), na.rm = TRUE)) %>%
-  dplyr :: mutate(sum_200 = rowSums(across(contains("200")), na.rm = TRUE)) %>%
-  dplyr :: mutate(sum_400 = rowSums(across(contains("400")), na.rm = TRUE)) %>%
-  dplyr :: mutate(sum_800 = rowSums(across(contains("800")), na.rm = TRUE)) %>%
-  dplyr :: mutate(sum_1600 = rowSums(across(contains("1600")), na.rm = TRUE)) %>% #calculate RRA of each distance 
+  dplyr :: mutate(sum_05 = rowSums(across(contains("_05_")), na.rm = TRUE)) %>% #subset RRA by sampling location, first sum 
+  dplyr :: mutate(sum_100 = rowSums(across(contains("_100_")), na.rm = TRUE)) %>%
+  dplyr :: mutate(sum_200 = rowSums(across(contains("_200_")), na.rm = TRUE)) %>%
+  dplyr :: mutate(sum_400 = rowSums(across(contains("_400_")), na.rm = TRUE)) %>%
+  dplyr :: mutate(sum_800 = rowSums(across(contains("_800_")), na.rm = TRUE)) %>%
+  dplyr :: mutate(sum_1600 = rowSums(across(contains("_1600_")), na.rm = TRUE)) %>% #calculate RRA of each distance 
   mutate(RRA_05 = sum_05/(sum(sum_05))) %>%
   mutate(RRA_100 = sum_100/(sum(sum_100))) %>%
   mutate(RRA_200 = sum_200/(sum(sum_200))) %>%
